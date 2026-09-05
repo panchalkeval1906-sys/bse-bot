@@ -5,9 +5,9 @@ from flask import Flask
 import threading
 import os
 
-# Telegram Bot Credentials
-TELEGRAM_BOT_TOKEN = "7730999031:AAHV-F8x2M_u3F4x5Qz6v_7W8x9y0z1A2B"  # Aapka token
-TELEGRAM_CHAT_ID = "123456789"        # Aapka chat ID
+# Aapke asli Telegram Credentials yahan set hain
+TELEGRAM_BOT_TOKEN = "7730999031:AAHV-F8x2M_u3F4x5Qz6v_7W8x9y0z1A2B"
+TELEGRAM_CHAT_ID = "6071666296"
 
 app = Flask(__name__)
 
