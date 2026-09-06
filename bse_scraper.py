@@ -2,7 +2,6 @@ import os
 import time
 import threading
 import requests
-import datetime
 from flask import Flask
 
 app = Flask(__name__)
@@ -25,6 +24,8 @@ def send_telegram_message(text):
         response = requests.post(url, json=payload, timeout=10)
         if response.status_code != 200:
             print(f"Telegram Error: {response.text}")
+        else:
+            print("Telegram message sent successfully!")
     except Exception as e:
         print(f"Failed to send telegram message: {e}")
 
@@ -38,20 +39,19 @@ def scrape_bse():
         "Referer": "https://www.bseindia.com/"
     }
     
-    # --- INITIALIZATION STEP ---
-    # Fetch current filings once on startup so we don't spam old historical messages
+    # Initial fetch to cache existing IDs
     try:
         initial_res = requests.get(url, headers=headers, timeout=15)
         if initial_res.status_code == 200:
             initial_data = initial_res.json().get("Table", [])
             for item in initial_data:
-                nid = str(item.get("NEWSID") or item.get("Id") or item.get("DissemDT"))
-                if nid:
+                # Handle multiple possible key casings safely
+                nid = str(item.get("NEWSID") or item.get("NewsId") or item.get("newsid") or item.get("Id") or item.get("DissemDT"))
+                if nid and nid != "None":
                     sent_ids.add(nid)
-            print(f"Initialized with {len(sent_ids)} existing filings. Now listening for LIVE filings...")
+            print(f"Initialized with {len(sent_ids)} existing filings. Listening for new ones...")
     except Exception as e:
         print(f"Error during initialization: {e}")
-    # ---------------------------
     
     while True:
         try:
@@ -60,14 +60,14 @@ def scrape_bse():
                 data = response.json()
                 announcements = data.get("Table", [])
                 
-                # Check from newest / iterate through items
                 for item in announcements:
-                    news_id = str(item.get("NEWSID") or item.get("Id") or item.get("DissemDT"))
+                    news_id = str(item.get("NEWSID") or item.get("NewsId") or item.get("newsid") or item.get("Id") or item.get("DissemDT"))
                     
-                    if news_id and news_id not in sent_ids:
-                        comp_name = item.get("SLONGNAME", "Unknown Company")
-                        headline = item.get("HEADLINE", "No Headline")
-                        pdf_url = item.get("ATTACHMENTNAME", "")
+                    if news_id and news_id != "None" and news_id not in sent_ids:
+                        comp_name = item.get("SLONGNAME") or item.get("CompanyName") or "Unknown Company"
+                        headline = item.get("HEADLINE") or item.get("Headline") or "No Headline"
+                        pdf_url = item.get("ATTACHMENTNAME") or item.get("AttachmentName") or ""
+                        
                         if pdf_url and not pdf_url.startswith("http"):
                             pdf_url = f"https://www.bseindia.com/xml-data/corpfiling/AttachLive/{pdf_url}"
                         
@@ -79,6 +79,7 @@ def scrape_bse():
                         if pdf_url:
                             msg += f"📄 [Download PDF]({pdf_url})"
                         
+                        print(f"New filing found: {comp_name} - Sending to Telegram...")
                         send_telegram_message(msg)
                         sent_ids.add(news_id)
                         
