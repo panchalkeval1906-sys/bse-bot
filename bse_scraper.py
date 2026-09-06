@@ -27,8 +27,18 @@ def send_telegram_message(message):
 def check_bse_filings():
   api_url = 'https://api.bseindia.com/BSEIndiaAPI/api/AnnSubCategoryGetData?strCat=-1&strPrevDate=&strScrip=&strSearch=P&strToDate=&strType=C'
 
+  headers = {
+      'User-Agent': (
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+          ' (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+      ),
+      'Referer': 'https://www.bseindia.com/',
+      'Origin': 'https://www.bseindia.com',
+      'Accept': 'application/json, text/plain, */*',
+      'Accept-Language': 'en-US,en;q=0.9',
+  }
+
   try:
-    # Cloudscraper instance create karo
     scraper = cloudscraper.create_scraper(
         browser={
             'browser': 'chrome',
@@ -37,12 +47,11 @@ def check_bse_filings():
         }
     )
 
-    # Step 1: Pehle main BSE homepage par request bhej kar Cloudflare cookie/clearance lo
-    home_res = scraper.get('https://www.bseindia.com/', timeout=15)
-    print('Homepage status:', home_res.status_code)
+    # Step 1: Pehle proper headers ke sath homepage hit karo taaki Cloudflare clearance cookie mil jaye
+    scraper.get('https://www.bseindia.com/', headers=headers, timeout=15)
 
-    # Step 2: Ab cookies ke sath API endpoint ko hit karo
-    response = scraper.get(api_url, timeout=15)
+    # Step 2: Ab cookies aur headers ke sath API endpoint ko hit karo
+    response = scraper.get(api_url, headers=headers, timeout=15)
 
     if response.status_code != 200:
       return (
@@ -52,17 +61,13 @@ def check_bse_filings():
       )
 
     if not response.text or len(response.text.strip()) == 0:
-      return (
-          'BSE returned empty response even after visiting homepage.',
-          200,
-      )
+      return 'BSE returned empty response.', 200
 
     if not response.text.strip().startswith(
         '{'
     ) and not response.text.strip().startswith('['):
       return (
-          f'Still Blocked! Response snippet:'
-          f' {response.text[:300].strip()}',
+          f'Blocked! Response snippet: {response.text[:300].strip()}',
           200,
       )
 
