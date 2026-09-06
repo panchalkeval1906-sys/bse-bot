@@ -28,6 +28,7 @@ def check_bse_filings():
   api_url = 'https://api.bseindia.com/BSEIndiaAPI/api/AnnSubCategoryGetData?strCat=-1&strPrevDate=&strScrip=&strSearch=P&strToDate=&strType=C'
 
   try:
+    # Cloudscraper instance create karo
     scraper = cloudscraper.create_scraper(
         browser={
             'browser': 'chrome',
@@ -36,9 +37,13 @@ def check_bse_filings():
         }
     )
 
+    # Step 1: Pehle main BSE homepage par request bhej kar Cloudflare cookie/clearance lo
+    home_res = scraper.get('https://www.bseindia.com/', timeout=15)
+    print('Homepage status:', home_res.status_code)
+
+    # Step 2: Ab cookies ke sath API endpoint ko hit karo
     response = scraper.get(api_url, timeout=15)
 
-    # Yahan hum status code aur response ka thoda sa hissa print karenge
     if response.status_code != 200:
       return (
           f'BSE Error! Status Code: {response.status_code} | Text:'
@@ -46,14 +51,17 @@ def check_bse_filings():
           200,
       )
 
-    if not response.text or len(response.text) < 10:
-      return 'BSE returned empty response.', 200
+    if not response.text or len(response.text.strip()) == 0:
+      return (
+          'BSE returned empty response even after visiting homepage.',
+          200,
+      )
 
     if not response.text.strip().startswith(
         '{'
     ) and not response.text.strip().startswith('['):
       return (
-          f'Cloudflare/BSE Blocked! Response snippet:'
+          f'Still Blocked! Response snippet:'
           f' {response.text[:300].strip()}',
           200,
       )
