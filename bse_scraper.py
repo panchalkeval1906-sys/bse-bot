@@ -1,107 +1,93 @@
 import os
-import time
-import threading
-import requests
 from flask import Flask
+import requests
 
 app = Flask(__name__)
 
-# Telegram Credentials
-TELEGRAM_BOT_TOKEN = "8818481447:AAHTzKl0t2vshflCgr2_lsbVTy6Uhldd6B0"
-TELEGRAM_CHAT_ID = "6071666296"
+# Telegram Bot Credentials (Yahan apne tokens daal lena agar hardcode karne hain)
+TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', 'YOUR_BOT_TOKEN')
+TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID', 'YOUR_CHAT_ID')
 
+# Purani filings track karne ke liye set (duplicate notifications rokne ke liye)
 sent_ids = set()
 
-def send_telegram_message(text):
-    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": TELEGRAM_CHAT_ID,
-        "text": text,
-        "parse_mode": "Markdown",
-        "disable_web_page_preview": False
-    }
-    try:
-        response = requests.post(url, json=payload, timeout=10)
-        if response.status_code != 200:
-            print(f"Telegram Error: {response.text}")
-        else:
-            print("Telegram message sent successfully!")
-    except Exception as e:
-        print(f"Failed to send telegram message: {e}")
 
-def scrape_bse():
-    global sent_ids
-    print("BSE Scraper background thread started...")
-    
-    url = "https://api.bseindia.com/BseIndiaAPI/api/AnnSubCategoryGetData/w?strCat=-1&subcategory=-1&strType=C"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Referer": "https://www.bseindia.com/"
-    }
-    
-    # Initial fetch to cache existing IDs
-    try:
-        initial_res = requests.get(url, headers=headers, timeout=15)
-        if initial_res.status_code == 200:
-            initial_data = initial_res.json().get("Table", [])
-            for item in initial_data:
-                # Handle multiple possible key casings safely
-                nid = str(item.get("NEWSID") or item.get("NewsId") or item.get("newsid") or item.get("Id") or item.get("DissemDT"))
-                if nid and nid != "None":
-                    sent_ids.add(nid)
-            print(f"Initialized with {len(sent_ids)} existing filings. Listening for new ones...")
-    except Exception as e:
-        print(f"Error during initialization: {e}")
-    
-    while True:
-        try:
-            response = requests.get(url, headers=headers, timeout=15)
-            if response.status_code == 200:
-                data = response.json()
-                announcements = data.get("Table", [])
-                
-                for item in announcements:
-                    news_id = str(item.get("NEWSID") or item.get("NewsId") or item.get("newsid") or item.get("Id") or item.get("DissemDT"))
-                    
-                    if news_id and news_id != "None" and news_id not in sent_ids:
-                        comp_name = item.get("SLONGNAME") or item.get("CompanyName") or "Unknown Company"
-                        headline = item.get("HEADLINE") or item.get("Headline") or "No Headline"
-                        pdf_url = item.get("ATTACHMENTNAME") or item.get("AttachmentName") or ""
-                        
-                        if pdf_url and not pdf_url.startswith("http"):
-                            pdf_url = f"https://www.bseindia.com/xml-data/corpfiling/AttachLive/{pdf_url}"
-                        
-                        msg = (
-                            f"🚨 *BSE Filing Alert*\n\n"
-                            f"🏢 *Company:* {comp_name}\n"
-                            f"📌 *Headline:* {headline}\n"
-                        )
-                        if pdf_url:
-                            msg += f"📄 [Download PDF]({pdf_url})"
-                        
-                        print(f"New filing found: {comp_name} - Sending to Telegram...")
-                        send_telegram_message(msg)
-                        sent_ids.add(news_id)
-                        
-                        if len(sent_ids) > 2000:
-                            sent_ids = set(list(sent_ids)[-1000:])
-                            
-                        time.sleep(1)
-            else:
-                print(f"BSE API returned status code: {response.status_code}")
-                
-        except Exception as e:
-            print(f"Error in scraper loop: {e}")
-            
-        time.sleep(60)
+def send_telegram_message(message):
+  url = f'https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage'
+  payload = {'chat_id': TELEGRAM_CHAT_ID, 'text': message, 'parse_mode': 'Markdown'}
+  try:
+    requests.post(url, json=payload, timeout=10)
+  except Exception as e:
+    print(f'Error sending Telegram message: {e}')
 
-@app.route("/")
-def home():
-    return "BSE Scraper Bot is Running live!"
 
-if __name__ == "__main__":
-    t = threading.Thread(target=scrape_bse, daemon=True)
-    t.start()
-    
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+def check_bse_filings():
+  # BSE API Endpoint for Corporate Announcements
+  url = 'https://api.bseindia.com/BSEIndiaAPI/api/AnnSubCategoryGetData?strCat=-1&strPrevDate=&strScrip=&strSearch=P&strToDate=&strType=C'
+  headers = {
+      'User-Agent': (
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      )
+  }
+
+  try:
+    response = requests.get(url, headers=headers, timeout=10)
+    if response.status_code == 200:
+      data = response.json()
+      announcements = data.get('Table', [])
+
+      global sent_ids
+      # Pehli baar run hone par purani filings ko cache kar lo taaki purane messages na aayein
+      if not sent_ids:
+        for item in announcements:
+          filing_id = str(
+              item.get('NEWSID') or item.get('ROW_ID') or item.get('Id')
+          )
+          if filing_id:
+            sent_ids.add(filing_id)
+        return (
+            'BSE Bot Initialized Successfully! Historical filings cached.',
+            200,
+        )
+
+      new_filings_count = 0
+      for item in announcements:
+        filing_id = str(
+            item.get('NEWSID') or item.get('ROW_ID') or item.get('Id')
+        )
+        if not filing_id:
+          continue
+
+        if filing_id not in sent_ids:
+          sent_ids.add(filing_id)
+          new_filings_count += 1
+
+          heading = item.get('HEADLINE', 'No Headline')
+          scrip_name = item.get('SLONGNAME', 'Unknown Company')
+          dt = item.get('NEWS_DT', '')
+
+          msg = (
+              f'🚨 *New BSE Filing Alert!*\n\n*Company:* {scrip_name}\n*Headline:*'
+              f' {heading}\n*Time:* {dt}'
+          )
+          send_telegram_message(msg)
+
+      return (
+          f'Checked successfully. New filings found sent: {new_filings_count}',
+          200,
+      )
+    else:
+      return f'Failed to fetch BSE data: {response.status_code}', 500
+  except Exception as e:
+      return f'Error occurred: {str(e)}', 500
+
+
+@app.route('/check-bse')
+def webhook_check():
+  result, status_code = check_bse_filings()
+  return result, status_code
+
+
+if __name__ == '__main__':
+  port = int(os.environ.get('PORT', 10000))
+  app.run(host='0.0.0.0', port=port)
