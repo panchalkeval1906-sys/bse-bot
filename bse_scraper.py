@@ -25,16 +25,27 @@ def send_telegram_message(message):
 
 
 def check_bse_filings():
+  # Alternative clean endpoint jo kam block hota hai
   api_url = 'https://api.bseindia.com/BSEIndiaAPI/api/AnnSubCategoryGetData?strCat=-1&strPrevDate=&strScrip=&strSearch=P&strToDate=&strType=C'
 
   headers = {
-      'User-Agent': (
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-          ' (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+      'Host': 'api.bseindia.com',
+      'Connection': 'keep-alive',
+      'sec-ch-ua': (
+          '"Chromium";v="122", "Not(A:Brand";v="24", "Google Chrome";v="122"'
       ),
-      'Referer': 'https://www.bseindia.com/',
-      'Origin': 'https://www.bseindia.com',
       'Accept': 'application/json, text/plain, */*',
+      'sec-ch-ua-mobile': '?0',
+      'User-Agent': (
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,'
+          ' like Gecko) Chrome/122.0.0.0 Safari/537.36'
+      ),
+      'sec-ch-ua-platform': '"Windows"',
+      'Origin': 'https://www.bseindia.com',
+      'Sec-Fetch-Site': 'same-site',
+      'Sec-Fetch-Mode': 'cors',
+      'Sec-Fetch-Dest': 'empty',
+      'Referer': 'https://www.bseindia.com/',
       'Accept-Language': 'en-US,en;q=0.9',
   }
 
@@ -47,27 +58,28 @@ def check_bse_filings():
         }
     )
 
-    # Step 1: Pehle proper headers ke sath homepage hit karo taaki Cloudflare clearance cookie mil jaye
+    # Pehle homepage hit karke cookies lo
     scraper.get('https://www.bseindia.com/', headers=headers, timeout=15)
 
-    # Step 2: Ab cookies aur headers ke sath API endpoint ko hit karo
+    # Ab API hit karo
     response = scraper.get(api_url, headers=headers, timeout=15)
+
+    print('Response Status:', response.status_code)
+    print('Response Length:', len(response.text))
 
     if response.status_code != 200:
       return (
-          f'BSE Error! Status Code: {response.status_code} | Text:'
-          f' {response.text[:200]}',
+          f'HTTP Error {response.status_code}: {response.text[:200]}',
           200,
       )
 
     if not response.text or len(response.text.strip()) == 0:
-      return 'BSE returned empty response.', 200
+      return 'BSE returned completely empty response.', 200
 
-    if not response.text.strip().startswith(
-        '{'
-    ) and not response.text.strip().startswith('['):
+    # Agar HTML return kiya hai Cloudflare ne
+    if '<html' in response.text.lower() or '<head' in response.text.lower():
       return (
-          f'Blocked! Response snippet: {response.text[:300].strip()}',
+          'Cloudflare HTML Challenge Page Received. IP is restricted.',
           200,
       )
 
@@ -75,8 +87,8 @@ def check_bse_filings():
       data = response.json()
     except Exception as json_err:
       return (
-          f'Failed to parse JSON: {str(json_err)} | Response:'
-          f' {response.text[:150]}',
+          f'JSON Parse Error: {str(json_err)} | Raw Text:'
+          f' {response.text[:200]}',
           500,
       )
 
