@@ -31,7 +31,8 @@ def send_telegram_message(message):
         print(f"Error sending telegram message: {e}")
 
 def fetch_bse_announcements():
-    url = "https://api.bseindia.com/BseIndiaAPI/api/AnnSubCategoryGetData/w?pageno=1&strCat=-1&strPrevDate=&strScrip=&strSearch=P&strType=C&subcategory=-1"
+    # Updated URL with broader search parameters to catch all corporate filings
+    url = "https://api.bseindia.com/BseIndiaAPI/api/AnnSubCategoryGetData/w?pageno=1&strCat=-1&strPrevDate=&strScrip=&strSearch=&strType=C&subcategory=-1"
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         "Referer": "https://www.bseindia.com/"
@@ -65,12 +66,12 @@ def process_announcement(item):
 
 def run_scraper():
     print("🚀 BSE High-Impact News + PDF Link Scraper Started!\n")
-    send_telegram_message("🚀 *BSE Alerts Active (Important News + PDF Links)*")
+    send_telegram_message("🚀 *BSE Alerts Active (Updated & Broad Feed)*")
     
     # Track processed IDs so duplicate messages aren't sent
     seen_ids = set()
     
-    # Pehli baar fetch karke purane IDs store kar lete hain taaki purani news ka spam na aaye
+    # Initial fetch to cache existing IDs so old news doesn't spam
     initial_announcements = fetch_bse_announcements()
     for item in initial_announcements:
         news_id = item.get("NEWSID")
@@ -91,14 +92,14 @@ def run_scraper():
         except Exception as e:
             print(f"Loop error: {e}")
             
-        time.sleep(60)  # Har 60 seconds mein check karega
+        time.sleep(60)  # Check every 60 seconds
 
 if __name__ == "__main__":
-    # Scraper ko background thread mein start karo
+    # Start scraper in background thread
     scraper_thread = threading.Thread(target=run_scraper)
     scraper_thread.daemon = True
     scraper_thread.start()
     
-    # Render ke liye Flask web server bind karo (PORT environment variable ke sath)
+    # Bind Flask web server for Render
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
