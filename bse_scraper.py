@@ -24,7 +24,8 @@ def send_telegram_message(message):
 
 
 def check_bse_filings():
-  url = 'https://api.bseindia.com/BSEIndiaAPI/api/AnnSubCategoryGetData?strCat=-1&strPrevDate=&strScrip=&strSearch=P&strToDate=&strType=C'
+  api_url = 'https://api.bseindia.com/BSEIndiaAPI/api/AnnSubCategoryGetData?strCat=-1&strPrevDate=&strScrip=&strSearch=P&strToDate=&strType=C'
+
   headers = {
       'User-Agent': (
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,'
@@ -37,12 +38,23 @@ def check_bse_filings():
   }
 
   try:
-    # Session use karne se cookies properly handle hoti hain
+    # Session use karenge taaki cookies properly store ho sakein
     session = requests.Session()
-    response = session.get(url, headers=headers, timeout=10)
+
+    # Step 1: Pehle main BSE website par request bhej kar cookies lo (anti-bot bypass)
+    session.get(
+        'https://www.bseindia.com/',
+        headers={
+            'User-Agent': headers['User-Agent'],
+            'Accept-Language': headers['Accept-Language'],
+        },
+        timeout=10,
+    )
+
+    # Step 2: Ab session ke sath API ko hit karo
+    response = session.get(api_url, headers=headers, timeout=10)
 
     if response.status_code == 200:
-      # Agar BSE ne HTML block page bheja hai, toh uska text yahan dikhega
       if not response.text.startswith('{') and not response.text.startswith(
           '['
       ):
