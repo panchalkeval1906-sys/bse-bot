@@ -1,105 +1,99 @@
-import requests
-import time
-from datetime import datetime
-from flask import Flask
-import threading
 import os
-
-# Aapka asli BotFather wala token aur Chat ID yahan set hai
-TELEGRAM_BOT_TOKEN = "8818481447:AAHTzKl0t2vshflCgr2_lsbVTy6Uhldd6B0"
-TELEGRAM_CHAT_ID = "6071666296"
+import time
+import threading
+import requests
+import datetime
+from flask import Flask
 
 app = Flask(__name__)
 
-@app.route('/')
-def home():
-    return "BSE Scraper Bot is active 24/7!"
+# Telegram Credentials
+TELEGRAM_BOT_TOKEN = "8818481447:AAHTzKl0t2vshflCgr2_lsbVTy6Uhldd6B0"
+TELEGRAM_CHAT_ID = "6071666296"
 
-def send_telegram_message(message):
+# Track processed announcement IDs to avoid duplicates
+sent_ids = set()
+
+def send_telegram_message(text):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
-        "text": message,
+        "text": text,
         "parse_mode": "Markdown",
-        "disable_web_page_preview": True
+        "disable_web_page_preview": False
     }
     try:
         response = requests.post(url, json=payload, timeout=10)
         if response.status_code != 200:
-            print(f"Failed to send telegram message: {response.text}")
+            print(f"Telegram Error: {response.text}")
     except Exception as e:
-        print(f"Error sending telegram message: {e}")
+        print(f"Failed to send telegram message: {e}")
 
-def fetch_bse_announcements():
-    # Updated URL with broader search parameters to catch all corporate filings
-    url = "https://api.bseindia.com/BseIndiaAPI/api/AnnSubCategoryGetData/w?pageno=1&strCat=-1&strPrevDate=&strScrip=&strSearch=&strType=C&subcategory=-1"
+def scrape_bse():
+    global sent_ids
+    print("BSE Scraper background thread started...")
+    
+    # Broad BSE API endpoint for all corporate filings
+    url = "https://api.bseindia.com/BseIndiaAPI/api/AnnSubCategoryGetData/w?strCat=-1&subcategory=-1&strType=C"
+    
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         "Referer": "https://www.bseindia.com/"
     }
-    try:
-        response = requests.get(url, headers=headers, timeout=10)
-        if response.status_code == 200:
-            data = response.json()
-            return data.get("Table", [])
-    except Exception as e:
-        print(f"Error fetching BSE announcements: {e}")
-    return []
-
-def process_announcement(item):
-    company_name = item.get("SLONGNAME", "N/A")
-    scrip_code = item.get("SCRIP_CD", "N/A")
-    headline = item.get("HEADLINE", "N/A")
-    category = item.get("Categoryname", "N/A")
-    pdf_attachment = item.get("ATTACHMENTNAME", "")
     
-    pdf_link = f"https://www.bseindia.com/xml-data/corpfiling/AttachLive/{pdf_attachment}" if pdf_attachment else "https://www.bseindia.com"
-
-    msg = (
-        f"🔥 *IMPORTANT BSE NEWS*\n\n"
-        f"🏢 *Company:* {company_name} ({scrip_code})\n"
-        f"📁 *Category:* {category}\n"
-        f"📰 *News:* {headline}\n\n"
-        f"🔗 [View PDF Document]({pdf_link})"
-    )
-    send_telegram_message(msg)
-
-def run_scraper():
-    print("🚀 BSE High-Impact News + PDF Link Scraper Started!\n")
-    send_telegram_message("🚀 *BSE Alerts Active (Updated & Broad Feed)*")
-    
-    # Track processed IDs so duplicate messages aren't sent
-    seen_ids = set()
-    
-    # Initial fetch to cache existing IDs so old news doesn't spam
-    initial_announcements = fetch_bse_announcements()
-    for item in initial_announcements:
-        news_id = item.get("NEWSID")
-        if news_id:
-            seen_ids.add(news_id)
-
     while True:
         try:
-            announcements = fetch_bse_announcements()
-            for item in reversed(announcements):
-                news_id = item.get("NEWSID")
-                if news_id and news_id not in seen_ids:
-                    seen_ids.add(news_id)
-                    process_announcement(item)
-                    # Memory limit control for seen_ids
-                    if len(seen_ids) > 1000:
-                        seen_ids.pop()
+            response = requests.get(url, headers=headers, timeout=15)
+            if response.status_code == 200:
+                data = response.json()
+                announcements = data.get("Table", [])
+                
+                # Process oldest to newest or check all current items
+                for item in announcements:
+                    news_id = str(item.get("NEWSID") or item.get("Id") or item.get("DissemDT"))
+                    
+                    if news_id and news_id not in sent_ids:
+                        comp_name = item.get("SLONGNAME", "Unknown Company")
+                        headline = item.get("HEADLINE", "No Headline")
+                        pdf_url = item.get("ATTACHMENTNAME", "")
+                        if pdf_url and not pdf_url.startswith("http"):
+                            pdf_url = f"https://www.bseindia.com/xml-data/corpfiling/AttachLive/{pdf_url}"
+                        
+                        # Format message without any filters
+                        msg = (
+                            f"🚨 *BSE Filing Alert*\n\n"
+                            f"🏢 *Company:* {comp_name}\n"
+                            f"📌 *Headline:* {headline}\n"
+                        )
+                        if pdf_url:
+                            msg += f"📄 [Download PDF]({pdf_url})"
+                        
+                        send_telegram_message(msg)
+                        sent_ids.add(news_id)
+                        
+                        # Keep sent_ids set from growing infinitely large
+                        if len(sent_ids) > 2000:
+                            sent_ids = set(list(sent_ids)[-1000:])
+                            
+                        time.sleep(1) # Prevent flooding Telegram API
+            else:
+                print(f"BSE API returned status code: {response.status_code}")
+                
         except Exception as e:
-            print(f"Loop error: {e}")
+            print(f"Error in scraper loop: {e}")
             
-        time.sleep(60)  # Check every 60 seconds
+        # Check for new filings every 60 seconds
+        time.sleep(60)
+
+@app.route("/")
+def home():
+    return "BSE Scraper Bot is Running live!"
 
 if __name__ == "__main__":
-    # Start scraper in background thread
-    scraper_thread = threading.Thread(target=run_scraper)
-    scraper_thread.daemon = True
-    scraper_thread.start()
+    # Start scraper thread in background
+    t = threading.Thread(target=scrape_bse, daemon=True)
+    t.start()
     
-    # Bind Flask web server for Render
+    # Run Flask server for Render & UptimeRobot
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
