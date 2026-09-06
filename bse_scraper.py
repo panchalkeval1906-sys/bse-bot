@@ -4,17 +4,19 @@ import requests
 
 app = Flask(__name__)
 
-# Telegram Bot Credentials (Yahan apne tokens daal lena agar hardcode karne hain)
 TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', 'YOUR_BOT_TOKEN')
 TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID', 'YOUR_CHAT_ID')
 
-# Purani filings track karne ke liye set (duplicate notifications rokne ke liye)
 sent_ids = set()
 
 
 def send_telegram_message(message):
   url = f'https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage'
-  payload = {'chat_id': TELEGRAM_CHAT_ID, 'text': message, 'parse_mode': 'Markdown'}
+  payload = {
+      'chat_id': TELEGRAM_CHAT_ID,
+      'text': message,
+      'parse_mode': 'Markdown',
+  }
   try:
     requests.post(url, json=payload, timeout=10)
   except Exception as e:
@@ -22,22 +24,31 @@ def send_telegram_message(message):
 
 
 def check_bse_filings():
-  # BSE API Endpoint for Corporate Announcements
   url = 'https://api.bseindia.com/BSEIndiaAPI/api/AnnSubCategoryGetData?strCat=-1&strPrevDate=&strScrip=&strSearch=P&strToDate=&strType=C'
   headers = {
       'User-Agent': (
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      )
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,'
+          ' like Gecko) Chrome/120.0.0.0 Safari/537.36'
+      ),
+      'Referer': 'https://www.bseindia.com/',
+      'Accept': 'application/json, text/javascript, */*; q=0.01',
   }
 
   try:
     response = requests.get(url, headers=headers, timeout=10)
     if response.status_code == 200:
-      data = response.json()
+      # Check if response text is empty or not proper JSON
+      if not response.text or not response.text.strip():
+        return 'BSE returned empty response (anti-bot protection).', 200
+
+      try:
+        data = response.json()
+      except Exception as json_err:
+        return f'Failed to parse JSON: {str(json_err)}', 500
+
       announcements = data.get('Table', [])
 
       global sent_ids
-      # Pehli baar run hone par purani filings ko cache kar lo taaki purane messages na aayein
       if not sent_ids:
         for item in announcements:
           filing_id = str(
