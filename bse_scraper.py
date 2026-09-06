@@ -28,23 +28,37 @@ def check_bse_filings():
   headers = {
       'User-Agent': (
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,'
-          ' like Gecko) Chrome/120.0.0.0 Safari/537.36'
+          ' like Gecko) Chrome/122.0.0.0 Safari/537.36'
       ),
       'Referer': 'https://www.bseindia.com/',
-      'Accept': 'application/json, text/javascript, */*; q=0.01',
+      'Origin': 'https://www.bseindia.com',
+      'Accept': 'application/json, text/plain, */*',
+      'Accept-Language': 'en-US,en;q=0.9',
   }
 
   try:
-    response = requests.get(url, headers=headers, timeout=10)
+    # Session use karne se cookies properly handle hoti hain
+    session = requests.Session()
+    response = session.get(url, headers=headers, timeout=10)
+
     if response.status_code == 200:
-      # Check if response text is empty or not proper JSON
-      if not response.text or not response.text.strip():
-        return 'BSE returned empty response (anti-bot protection).', 200
+      # Agar BSE ne HTML block page bheja hai, toh uska text yahan dikhega
+      if not response.text.startswith('{') and not response.text.startswith(
+          '['
+      ):
+        return (
+            f'BSE Blocked/Non-JSON Response Received: {response.text[:300]}',
+            200,
+        )
 
       try:
         data = response.json()
       except Exception as json_err:
-        return f'Failed to parse JSON: {str(json_err)}', 500
+        return (
+            f'Failed to parse JSON: {str(json_err)} | Response was:'
+            f' {response.text[:200]}',
+            500,
+        )
 
       announcements = data.get('Table', [])
 
