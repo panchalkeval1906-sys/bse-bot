@@ -1,6 +1,6 @@
 import os
+import cloudscraper
 from flask import Flask
-import requests
 
 app = Flask(__name__)
 
@@ -18,7 +18,8 @@ def send_telegram_message(message):
       'parse_mode': 'Markdown',
   }
   try:
-    requests.post(url, json=payload, timeout=10)
+    scraper = cloudscraper.create_scraper()
+    scraper.post(url, json=payload, timeout=10)
   except Exception as e:
     print(f'Error sending Telegram message: {e}')
 
@@ -26,33 +27,17 @@ def send_telegram_message(message):
 def check_bse_filings():
   api_url = 'https://api.bseindia.com/BSEIndiaAPI/api/AnnSubCategoryGetData?strCat=-1&strPrevDate=&strScrip=&strSearch=P&strToDate=&strType=C'
 
-  headers = {
-      'User-Agent': (
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,'
-          ' like Gecko) Chrome/122.0.0.0 Safari/537.36'
-      ),
-      'Referer': 'https://www.bseindia.com/',
-      'Origin': 'https://www.bseindia.com',
-      'Accept': 'application/json, text/plain, */*',
-      'Accept-Language': 'en-US,en;q=0.9',
-  }
-
   try:
-    # Session use karenge taaki cookies properly store ho sakein
-    session = requests.Session()
-
-    # Step 1: Pehle main BSE website par request bhej kar cookies lo (anti-bot bypass)
-    session.get(
-        'https://www.bseindia.com/',
-        headers={
-            'User-Agent': headers['User-Agent'],
-            'Accept-Language': headers['Accept-Language'],
-        },
-        timeout=10,
+    # Cloudscraper use karenge jo Cloudflare block ko bypass kar dega
+    scraper = cloudscraper.create_scraper(
+        browser={
+            'browser': 'chrome',
+            'platform': 'windows',
+            'desktop': True,
+        }
     )
 
-    # Step 2: Ab session ke sath API ko hit karo
-    response = session.get(api_url, headers=headers, timeout=10)
+    response = scraper.get(api_url, timeout=15)
 
     if response.status_code == 200:
       if not response.text.startswith('{') and not response.text.startswith(
@@ -114,7 +99,10 @@ def check_bse_filings():
           200,
       )
     else:
-      return f'Failed to fetch BSE data: {response.status_code}', 500
+      return (
+          f'Failed to fetch BSE data: Status code {response.status_code}',
+          500,
+      )
   except Exception as e:
       return f'Error occurred: {str(e)}', 500
 
@@ -128,3 +116,4 @@ def webhook_check():
 if __name__ == '__main__':
   port = int(os.environ.get('PORT', 10000))
   app.run(host='0.0.0.0', port=port)
+  
